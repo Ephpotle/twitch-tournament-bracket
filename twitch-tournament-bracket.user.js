@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Twitch tournament bracket
 // @namespace    claude-for-zen
-// @version      1.2.0
+// @version      1.2.1
 // @description  On a Twitch stream that is showing an ongoing esports tournament (looked up on Liquipedia), adds a "Bracket" button next to Follow that shows or hides the live tournament bracket.
 // @author       Ephpotle
 // @license      MIT
@@ -65,13 +65,17 @@
       return { html: j.parse.text['*'], title: (j.parse.displaytitle || page).replace(/<[^>]+>/g, '') };
     });
   }
+  // Fetch the wiki's list of current matches and save it. If the fetch fails, the previous list is kept.
   const pendingM = {};
-  function getMatches(wiki) {
-    const c = ls.get('m:' + wiki);
-    if (c && Date.now() - c.t < MATCH_TTL) return Promise.resolve(c.list);
+  function fetchMatches(wiki) {
     if (!pendingM[wiki]) {
-      pendingM[wiki] = parsePage(wiki, 'Liquipedia:Matches').then(r => parseMatches(r.html), () => [])
-        .then(list => { ls.set('m:' + wiki, { t: Date.now(), list }); delete pendingM[wiki]; return list; });
+      pendingM[wiki] = parsePage(wiki, 'Liquipedia:Matches').then(r => parseMatches(r.html), () => null).then(list => {
+        delete pendingM[wiki];
+        const old = ls.get('m:' + wiki);
+        const use = list || (old && old.list) || [];
+        ls.set('m:' + wiki, { t: Date.now(), list: use });
+        return use;
+      });
     }
     return pendingM[wiki];
   }
@@ -259,7 +263,7 @@
 @keyframes draw{to{stroke-dashoffset:0}}
 .dim .m{opacity:.3!important}.dim .m.on{opacity:1!important;transform:scale(1.03)}.dim .t.on{background:var(--row)}.dim .c{opacity:.25}
 `;
-  const S = { key: null, tour: null, open: ls.get('open') === 1, timer: 0 };
+  const S = { key: null, tour: null, title: '', open: ls.get('open') === 1, timer: 0 };
   let btnHost, btn, panelHost, panel, titleEl, body, foot;
   // Saved window geometry: {l, t, w, h}; w/h are unset until the user resizes.
   let G = ls.get('geo'), natW = 0, natH = 0;
@@ -268,6 +272,8 @@
     const h = el('div'); h.id = id; h.dataset.theme = isDark() ? 'dark' : 'light';
     const sh = h.attachShadow({ mode: 'open' }); sh.append(el('style', null, CSS)); return h;
   }
+  // The button belongs next to Follow. If Twitch has not drawn that row yet it waits in the bottom-left
+  // corner, and moves into the row as soon as the row exists (this runs again on every page change).
   function placeButton() {
     if (!btnHost) {
       btnHost = makeHost('ttb-button'); btn = el('button', 'btn', '🏆 Bracket');
@@ -276,12 +282,19 @@
     btn.title = (S.tour ? S.tour.name + ': ' : '') + 'show or hide the tournament bracket';
     btn.classList.toggle('on', S.open);
     btnHost.dataset.theme = isDark() ? 'dark' : 'light';
-    if (btnHost.isConnected) return;
-    const f = document.querySelector('[data-a-target="follow-button"],[data-a-target="unfollow-button"]');
+    if (btnHost.isConnected && btnHost.dataset.where === 'row') return;
+    const sel = '[data-a-target="follow-button"],[data-a-target="unfollow-button"]';
+    const info = document.querySelector('.metadata-layout__support');
+    const f = (info && info.querySelector(sel)) || document.querySelector(sel);
     let e = f, n = 0;
     while (e && e.parentElement && n++ < 14 && !(e.parentElement.children.length > 1 && e.parentElement.getBoundingClientRect().width > 150)) e = e.parentElement;
-    if (f && e && e.parentElement && n < 14) { btnHost.style.cssText = 'display:flex;align-items:center'; e.parentElement.insertBefore(btnHost, e); }
-    else if (!f && document.querySelector('a[data-a-target="stream-game-link"]')) { btnHost.style.cssText = 'position:fixed;left:16px;bottom:16px;z-index:9998'; document.body.append(btnHost); }
+    if (f && e && e.parentElement && n < 14) {
+      btnHost.style.cssText = 'display:flex;align-items:center'; btnHost.dataset.where = 'row';
+      e.parentElement.insertBefore(btnHost, e);
+    } else if (!btnHost.isConnected && document.querySelector('a[data-a-target="stream-game-link"]')) {
+      btnHost.style.cssText = 'position:fixed;left:16px;bottom:16px;z-index:9998'; btnHost.dataset.where = 'fixed';
+      document.body.append(btnHost);
+    }
   }
   function applyGeo() {
     const st = panelHost.style;
@@ -422,16 +435,24 @@
     } else if (panelHost) panelHost.style.display = 'none';
   }
   function hideAll() { clearInterval(S.timer); if (btnHost) btnHost.remove(); if (panelHost) panelHost.style.display = 'none'; }
+  function titleText() { const t = document.querySelector('[data-a-target="stream-title"]'); return t ? t.textContent : ''; }
+  // Match this stream against a list of current matches; show the button when a tournament is found.
+  function tryList(list, chan, wiki) {
+    S.title = titleText();
+    const hit = pick(list, chan, S.title);
+    if (!hit || (S.tour && S.tour.page === hit.p)) return;
+    S.tour = { wiki, page: hit.p, name: hit.n.split(' - ')[0] };
+    placeButton();
+    if (S.open) setOpen(true); else loadBracket(S.tour, false).catch(() => {});
+  }
+  // Use the saved match list straight away (even if it is a little old) so the button appears at once,
+  // then fetch a fresh list in the background when the saved one has expired.
   async function detect(key, chan, wiki) {
     try {
-      const list = await getMatches(wiki);
-      if (S.key !== key) return;
-      const tEl = document.querySelector('[data-a-target="stream-title"]');
-      const hit = pick(list, chan, tEl ? tEl.textContent : '');
-      if (!hit) return;
-      S.tour = { wiki, page: hit.p, name: hit.n.split(' - ')[0] };
-      placeButton();
-      if (S.open) setOpen(true); else loadBracket(S.tour, false).catch(() => {});
+      const c = ls.get('m:' + wiki);
+      if (c && c.list) { tryList(c.list, chan, wiki); if (Date.now() - c.t < MATCH_TTL) return; }
+      const list = await fetchMatches(wiki);
+      if (S.key === key) tryList(list, chan, wiki);
     } catch (e) { console.debug('[twitch-bracket]', e); }
   }
   function tick() {
@@ -440,8 +461,13 @@
     const slug = gl ? ((gl.getAttribute('href') || '').split('/category/')[1] || '').split(/[?#/]/)[0] : '';
     const wiki = WIKIS[slug];
     const key = m && wiki ? m[1].toLowerCase() + '|' + wiki : null;
-    if (key !== S.key) { S.key = key; S.tour = null; hideAll(); if (key) detect(key, m[1], wiki); }
+    if (key !== S.key) { S.key = key; S.tour = null; S.title = ''; hideAll(); if (key) detect(key, m[1], wiki); }
     else if (S.tour) placeButton();
+    else if (key && titleText() !== S.title) {
+      // The stream title arrived or changed after the first check: try the saved list again.
+      const c = ls.get('m:' + wiki);
+      if (c && c.list) tryList(c.list, m[1], wiki); else S.title = titleText();
+    }
   }
   let queued = false;
   new MutationObserver(() => { if (queued) return; queued = true; setTimeout(() => { queued = false; tick(); }, 1000); })
