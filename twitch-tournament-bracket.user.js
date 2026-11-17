@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Twitch tournament bracket
 // @namespace    claude-for-zen
-// @version      1.2.2
+// @version      1.2.3
 // @description  On a Twitch stream that is showing an ongoing esports tournament (looked up on Liquipedia), adds a "Bracket" button next to Follow that shows or hides the live tournament bracket.
 // @author       Ephpotle
 // @license      MIT
@@ -449,11 +449,14 @@
   }
   function hideAll() { clearInterval(S.timer); if (btnHost) btnHost.remove(); if (panelHost) panelHost.style.display = 'none'; }
   function titleText() { const t = document.querySelector('[data-a-target="stream-title"]'); return t ? t.textContent : ''; }
-  // Match this stream against a list of current matches; show the button when a tournament is found.
+  // Match this stream against a list of current matches. Shows the button when a tournament is found
+  // and takes it away again when the stream no longer matches one (Twitch keeps showing the previous
+  // channel's title for a moment after switching channels, and streamers change titles between matches).
   function tryList(list, chan, wiki) {
     S.title = titleText();
     const hit = pick(list, chan, S.title);
-    if (!hit || (S.tour && S.tour.page === hit.p)) return;
+    if (!hit) { if (S.tour) { S.tour = null; hideAll(); } return; }
+    if (S.tour && S.tour.page === hit.p) { placeButton(); return; }
     S.tour = { wiki, page: hit.p, name: hit.n.split(' - ')[0] };
     placeButton();
     if (S.open) setOpen(true); else loadBracket(S.tour, false).catch(() => {});
@@ -474,13 +477,14 @@
     const slug = gl ? ((gl.getAttribute('href') || '').split('/category/')[1] || '').split(/[?#/]/)[0] : '';
     const wiki = WIKIS[slug];
     const key = m && wiki ? m[1].toLowerCase() + '|' + wiki : null;
+    const tt = titleText();
     if (key !== S.key) { S.key = key; S.tour = null; S.title = ''; hideAll(); if (key) detect(key, m[1], wiki); }
-    else if (S.tour) placeButton();
-    else if (key && titleText() !== S.title) {
-      // The stream title arrived or changed after the first check: try the saved list again.
+    else if (key && tt && tt !== S.title) {
+      // The stream title arrived or changed since the last check: decide again from the saved list.
       const c = ls.get('m:' + wiki);
-      if (c && c.list) tryList(c.list, m[1], wiki); else S.title = titleText();
+      if (c && c.list) tryList(c.list, m[1], wiki); else S.title = tt;
     }
+    else if (S.tour) placeButton();
   }
   let queued = false;
   new MutationObserver(() => { if (queued) return; queued = true; setTimeout(() => { queued = false; tick(); }, 1000); })
