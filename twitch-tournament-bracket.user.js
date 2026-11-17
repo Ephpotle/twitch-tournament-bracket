@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Twitch tournament bracket
 // @namespace    claude-for-zen
-// @version      1.2.1
+// @version      1.2.2
 // @description  On a Twitch stream that is showing an ongoing esports tournament (looked up on Liquipedia), adds a "Bracket" button next to Follow that shows or hides the live tournament bracket.
 // @author       Ephpotle
 // @license      MIT
@@ -79,6 +79,14 @@
     }
     return pendingM[wiki];
   }
+  // Each opponent is kept as a list of name variants: the short name Liquipedia displays ("TSpirit")
+  // and the full name from the team link ("Team Spirit"), because stream titles use either.
+  function oppNames(op) {
+    const nm = op.querySelector('.name'), a = op.querySelector('a[title]');
+    const short = nm ? nm.textContent.trim() : '';
+    const full = a ? a.getAttribute('title').replace(/\s*\(page does not exist\)$/, '').replace(/\s*\([^)]*\)$/, '').trim() : '';
+    return [short, full].filter((v, i, arr) => v && arr.indexOf(v) === i);
+  }
   function parseMatches(html) {
     const d = new DOMParser().parseFromString(html, 'text/html');
     return [...d.querySelectorAll('.match-info')].map(x => {
@@ -92,19 +100,24 @@
         p: page, n: (nameEl ? nameEl.textContent.trim() : '') || page.replace(/_/g, ' '),
         s: [...x.querySelectorAll('a[href*="Special:Stream/twitch/"]')].map(l => norm(l.getAttribute('href').split('Special:Stream/twitch/')[1])),
         ts: t ? +t.dataset.timestamp || 0 : 0, fin: !!t && t.dataset.finished === 'finished',
-        o: [...x.querySelectorAll('.match-info-header-opponent .name')].map(n => n.textContent.trim())
+        o: [...x.querySelectorAll('.match-info-header-opponent')].map(oppNames)
       };
     }).filter(Boolean);
   }
   // Which tournament is this stream showing? 1) Liquipedia lists this channel as the stream,
-  // 2) both teams of a current match are named in the stream title, 3) the tournament name is in the title.
+  // 2) both teams of a current match are named in the stream title,
+  // 3) the tournament name, or the name of its series ("1win Essence"), is in the title.
   function pick(list, chan, title) {
     const now = Date.now() / 1000, c = norm(chan), tl = ' ' + title.toLowerCase() + ' ';
     const word = n => { const i = tl.indexOf(n.toLowerCase()); return i > 0 && !/[a-z0-9]/.test(tl[i - 1]) && !/[a-z0-9]/.test(tl[i + n.length] || ' '); };
+    const variants = n => (Array.isArray(n) ? n : [n]).filter(v => v && v.length >= 2 && v !== 'TBD');
     const cand = list.filter(m => !m.fin && m.ts < now + 3 * 3600 && m.ts > now - 12 * 3600);
     let hit = cand.filter(m => m.s.includes(c));
-    if (!hit.length) hit = cand.filter(m => m.ts < now + 1800 && m.o.length === 2 && m.o.every(n => n.length >= 2 && n !== 'TBD' && word(n)));
-    if (!hit.length) hit = cand.filter(m => { const nm = m.n.split(' - ')[0]; return nm.length >= 6 && tl.includes(nm.toLowerCase()); });
+    if (!hit.length) hit = cand.filter(m => m.ts < now + 1800 && m.o.length === 2 && m.o.every(n => variants(n).some(word)));
+    if (!hit.length) hit = cand.filter(m => {
+      const nm = m.n.split(' - ')[0], series = m.p.split('/')[0].replace(/_/g, ' ');
+      return (nm.length >= 6 && tl.includes(nm.toLowerCase())) || (series.length >= 8 && word(series));
+    });
     hit.sort((a, b) => Math.abs(a.ts - now) - Math.abs(b.ts - now));
     return hit[0] || null;
   }
