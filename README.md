@@ -26,7 +26,7 @@ The script reads the game category of the stream, loads the list of current matc
 
 ## Limitations
 
-- Tested on Dota 2 with a double-elimination bracket. About 20 other games are mapped to their Liquipedia wikis, but those mappings are not all verified.
+- Tested on Dota 2 with a double-elimination bracket. Every game with a Liquipedia wiki is mapped (59 wikis, including the alpha wikis, covering about 100 Twitch categories whose names were checked against Twitch), but only Dota 2 has been seen working end to end. Games without a Liquipedia wiki, such as Heroes of Might and Magic, are not supported.
 - Only brackets are drawn. Group stages, Swiss rounds and league tables are not shown.
 - Liquipedia allows one page request per 30 seconds, so the first bracket on a new channel can take up to half a minute to appear.
 - The script relies on Twitch page markup and Liquipedia bracket markup, either of which can change.
