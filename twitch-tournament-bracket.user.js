@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Twitch tournament bracket
 // @namespace    claude-for-zen
-// @version      1.2.3
+// @version      1.3.0
 // @description  On a Twitch stream that is showing an ongoing esports tournament (looked up on Liquipedia), adds a "Bracket" button next to Follow that shows or hides the live tournament bracket.
 // @author       Ephpotle
 // @license      MIT
@@ -15,9 +15,34 @@
 (function () {
   'use strict';
   if (window.__ttbLoaded) return; window.__ttbLoaded = true;
-  // Twitch category slug -> Liquipedia wiki
-  const WIKIS = { 'dota-2': 'dota2', 'counter-strike': 'counterstrike', 'valorant': 'valorant', 'league-of-legends': 'leagueoflegends', 'rocket-league': 'rocketleague', 'starcraft-ii': 'starcraft2', 'apex-legends': 'apexlegends', 'overwatch-2': 'overwatch', 'tom-clancys-rainbow-six-siege': 'rainbowsix', 'mobile-legends-bang-bang': 'mobilelegends', 'warcraft-iii': 'warcraft', 'pubg-battlegrounds': 'pubg', 'deadlock': 'deadlock', 'marvel-rivals': 'marvelrivals', 'teamfight-tactics': 'tft', 'hearthstone': 'hearthstone', 'world-of-warcraft': 'worldofwarcraft', 'heroes-of-the-storm': 'heroes', 'age-of-empires-ii-definitive-edition': 'ageofempires', 'age-of-empires-iv': 'ageofempires' };
-  const UA = 'TwitchTournamentBracket/1.2 (+https://github.com/Ephpotle/twitch-tournament-bracket)';
+  // Liquipedia wiki -> the Twitch categories that belong to it (category URL slugs, checked against Twitch).
+  const GAMES = {
+    dota2: 'dota-2', counterstrike: 'counter-strike', valorant: 'valorant', leagueoflegends: 'league-of-legends',
+    mobilelegends: 'mobile-legends-bang-bang', rocketleague: 'rocket-league', overwatch: 'overwatch-2',
+    rainbowsix: 'tom-clancys-rainbow-six-siege', apexlegends: 'apex-legends', pubg: 'pubg-battlegrounds',
+    pubgmobile: 'pubg-mobile', freefire: 'garena-free-fire', starcraft2: 'starcraft-ii', starcraft: 'starcraft',
+    warcraft: 'warcraft-iii', brawlstars: 'brawl-stars', honorofkings: 'honor-of-kings', marvelrivals: 'marvel-rivals',
+    fortnite: 'fortnite', worldoftanks: 'world-of-tanks', hearthstone: 'hearthstone', heroes: 'heroes-of-the-storm',
+    wildrift: 'league-of-legends-wild-rift', standoff2: 'standoff-2', tft: 'teamfight-tactics', trackmania: 'trackmania',
+    deadlock: 'deadlock-1', crossfire: 'crossfire-2007', geoguessr: 'geoguessr', clashroyale: 'clash-royale',
+    identityv: 'identity-v', thefinals: 'the-finals', osu: 'osu', deltaforce: 'delta-force-hawk-ops',
+    teamfortress: 'team-fortress-2', halo: 'halo-infinite', worldofwarcraft: 'world-of-warcraft',
+    clashofclans: 'clash-of-clans', eva: 'after-h', warthunder: 'war-thunder', tarkovarena: 'escape-from-tarkov-arena',
+    omegastrikers: 'omega-strikers', brawlhalla: 'brawlhalla', naraka: 'naraka-bladepoint', rematch: 'rematch',
+    splatoon: 'splatoon-3', stormgate: 'stormgate', goals: 'goals', chess: 'chess-1', formula1: 'formula-1',
+    smash: 'super-smash-bros-ultimate super-smash-bros-melee',
+    ageofempires: 'age-of-empires-ii age-of-empires-iv age-of-empires-iii age-of-mythology',
+    callofduty: 'call-of-duty-black-ops-7 call-of-duty-black-ops-6 call-of-duty-modern-warfare-iii call-of-duty-warzone call-of-duty-mobile call-of-duty-warzone-mobile',
+    easportsfc: 'ea-sports-fc-26 ea-sports-fc-25 fc-mobile',
+    pokemon: 'pokemon-unite pokemon-scarlet-violet pokemon-trading-card-game-live pokemon-go pokemon-champions pokemon-legends-z',
+    tetris: 'tetris-1989 tetr-io tetris-effect-connected tetris-99',
+    arenafps: 'quake-champions quake-live quake-iii-arena diabotical',
+    simracing: 'iracing assetto-corsa-competizione assetto-corsa assetto-corsa-2 rfactor-2 gran-turismo-7 le-mans-ultimate raceroom-racing-experience f1-25 ea-sports-f1-24',
+    fighters: 'street-fighter-6 tekken-8 guilty-gear-strive mortal-kombat-1 granblue-fantasy-versus-rising fatal-fury-city-of-the-wolves street-fighter-v dragon-ball-fighterz the-king-of-fighters-xv 2xko under-night-in-birth-ii-sys-celes tekken-7-2015 virtua-fighter-5-r-e-v-o marvel-tokon-fighting-souls invincible-vs'
+  };
+  const WIKIS = {};
+  for (const w in GAMES) GAMES[w].split(' ').forEach(s => { WIKIS[s] = w; });
+  const UA = 'TwitchTournamentBracket/1.3 (+https://github.com/Ephpotle/twitch-tournament-bracket)';
   const PARSE_GAP = 31000, MATCH_TTL = 10 * 60e3, BRACKET_TTL = 3 * 60e3, SEC_TTL = 6 * 3600e3, COL = 206;
   const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const ls = {
